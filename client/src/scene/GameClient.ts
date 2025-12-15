@@ -5,7 +5,7 @@ import type { MapDefinition } from "@christmas/shared";
 import { MAP_DEFINITIONS } from "../maps/mapData";
 import { buildSceneForMap } from "../maps/loadMap";
 
-export type GameMode = "bots" | "multiplayer";
+export type GameMode = "menu" | "bots" | "multiplayer";
 
 export interface GameClientOptions {
   mapId: MapId;
@@ -69,7 +69,8 @@ export class GameClient {
   };
   private netClient: ColyseusClient | null = null;
   private netRoom: Room | null = null;
-  private remoteMeshes = new Map<string, THREE.Mesh>();
+  private remoteMeshes = new Map<string, THREE.Group>();
+  private localMesh!: THREE.Group;
 
   constructor(container: HTMLDivElement, options: GameClientOptions) {
     this.container = container;
@@ -89,33 +90,42 @@ export class GameClient {
     this.bindEvents();
     this.loadMap(options.mapId);
     this.spawnPlayer(options.playerName);
+    
     if (this.mode === "bots") {
       this.spawnBots();
-    } else {
+    } else if (this.mode === "multiplayer") {
       this.setupMultiplayer(options.mapId, options.playerName).catch((err) => {
         console.error("Multiplayer connect failed", err);
       });
+    } else if (this.mode === "menu") {
+      // Menu mode: just show scene, maybe some bots fighting in background?
+      this.spawnBots();
     }
+    
     this.updateHud();
   }
 
   private bindEvents() {
     window.addEventListener("resize", this.onResize);
-    this.container.addEventListener("click", () => {
-      this.container.requestPointerLock();
-    });
-    document.addEventListener("pointerlockchange", () => {
-      this.pointerLocked = document.pointerLockElement === this.container;
-    });
-    document.addEventListener("mousemove", this.onMouseMove);
-    document.addEventListener("keydown", this.onKeyDown);
-    document.addEventListener("keyup", this.onKeyUp);
-    document.addEventListener("mousedown", (e) => {
-      if (e.button === 0) this.inputState.fireHeld = true;
-    });
-    document.addEventListener("mouseup", (e) => {
-      if (e.button === 0) this.inputState.fireHeld = false;
-    });
+    
+    // Only lock pointer if not in menu
+    if (this.mode !== "menu") {
+      this.container.addEventListener("click", () => {
+        this.container.requestPointerLock();
+      });
+      document.addEventListener("pointerlockchange", () => {
+        this.pointerLocked = document.pointerLockElement === this.container;
+      });
+      document.addEventListener("mousemove", this.onMouseMove);
+      document.addEventListener("keydown", this.onKeyDown);
+      document.addEventListener("keyup", this.onKeyUp);
+      document.addEventListener("mousedown", (e) => {
+        if (e.button === 0) this.inputState.fireHeld = true;
+      });
+      document.addEventListener("mouseup", (e) => {
+        if (e.button === 0) this.inputState.fireHeld = false;
+      });
+    }
   }
 
   private loadMap(mapId: MapId) {
@@ -161,7 +171,14 @@ export class GameClient {
       isBot: false,
       nextFire: 0
     };
-    this.camera.position.copy(this.player.position.clone().add(new THREE.Vector3(0, 1.6, 0)));
+    
+    // Create local player mesh (TPS)
+    this.localMesh = makePlayerMesh(this.player.weapon);
+    this.localMesh.position.copy(this.player.position);
+    this.scene.add(this.localMesh);
+
+    // Initial camera setup
+    this.updateCamera();
   }
 
   private async setupMultiplayer(mapId: MapId, playerName: string) {
@@ -179,7 +196,7 @@ export class GameClient {
         if (key === room.sessionId) {
           this.player.position.set(player.x, player.y, player.z);
         }
-        const mesh = makeRemoteMesh(player.weapon as WeaponId);
+        const mesh = makePlayerMesh(player.weapon as WeaponId);
         mesh.position.set(player.x, player.y, player.z);
         this.scene.add(mesh);
         this.remoteMeshes.set(key, mesh);
@@ -229,6 +246,14 @@ export class GameClient {
         isBot: true,
         nextFire: 0
       });
+      // Add visual representation for bots
+      const botMesh = makePlayerMesh(weapon);
+      botMesh.position.copy(this.bots[i].position);
+      botMesh.rotation.y = this.bots[i].yaw;
+      this.scene.add(botMesh);
+      // Store reference? for now just update by matching index or something in tick
+      // Simplification: attach mesh to bot object for local tracking
+      (this.bots[i] as any).mesh = botMesh;
     }
   }
 
@@ -258,8 +283,24 @@ export class GameClient {
 
   private tick = () => {
     const dt = Math.min(this.clock.getDelta(), 0.05);
-    this.stepPlayer(dt);
-    if (this.mode === "bots") {
+    
+    if (this.mode === "menu") {
+      // Rotate camera around player for menu effect
+      const time = Date.now() * 0.0005;
+      const radius = 5;
+      this.camera.position.x = this.player.position.x + Math.sin(time) * radius;
+      this.camera.position.z = this.player.position.z + Math.cos(time) * radius;
+      this.camera.position.y = this.player.position.y + 2;
+      this.camera.lookAt(this.player.position.clone().add(new THREE.Vector3(0, 1.5, 0)));
+      
+      // Make player idle rotate?
+      this.player.yaw = time;
+      this.localMesh.rotation.y = this.player.yaw;
+    } else {
+      this.stepPlayer(dt);
+    }
+
+    if (this.mode === "bots" || this.mode === "menu") {
       this.stepBots(dt);
     } else if (this.netRoom) {
       this.sendInput();
@@ -296,14 +337,37 @@ export class GameClient {
     this.clampToBounds(nextPos);
     this.player.position.copy(nextPos);
 
-    // Camera follows
-    this.camera.position.copy(this.player.position.clone().add(new THREE.Vector3(0, 1.4, 0)));
-    this.camera.rotation.set(this.player.pitch, this.player.yaw, 0, "YXZ");
+    // Update mesh
+    this.localMesh.position.copy(this.player.position);
+    this.localMesh.rotation.y = this.player.yaw;
+
+    // Update Camera (TPS)
+    this.updateCamera();
 
     // Shooting
     if (this.inputState.fireHeld) {
       this.tryFire(this.player, this.bots, dt);
     }
+  }
+
+  private updateCamera() {
+    // Camera follow logic
+    const camDist = 4;
+    const camHeight = 2.5;
+    
+    // Position camera behind player
+    const offset = new THREE.Vector3(0, camHeight, camDist);
+    offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.player.yaw);
+    
+    const camPos = this.player.position.clone().add(offset);
+    this.camera.position.lerp(camPos, 0.2);
+    
+    // Look ahead of player
+    const lookTarget = this.player.position.clone().add(new THREE.Vector3(0, 1.5, 0));
+    // Adjust look target based on pitch
+    lookTarget.y += Math.sin(this.player.pitch) * 5;
+    
+    this.camera.lookAt(lookTarget);
   }
 
   private stepBots(dt: number) {
@@ -333,6 +397,12 @@ export class GameClient {
       }
       this.clampToBounds(nextPos);
       bot.position.copy(nextPos);
+
+      // Update bot mesh
+      if ((bot as any).mesh) {
+        (bot as any).mesh.position.copy(bot.position);
+        (bot as any).mesh.rotation.y = bot.yaw;
+      }
 
       // Shoot at player
       this.tryFire(bot, [this.player], dt);
@@ -463,18 +533,33 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function makeRemoteMesh(weapon: WeaponId) {
-  const color = WEAPONS[weapon].type === "hitscan" ? "#81e6d9" : "#f77f00";
+function makePlayerMesh(weaponId: WeaponId) {
+  const group = new THREE.Group();
+  const color = 0xffffff; // Egg color
+  
+  // Body (Egg)
   const geo = new THREE.CapsuleGeometry(0.6, 1.2, 6, 10);
   const mat = new THREE.MeshStandardMaterial({
     color,
-    emissive: new THREE.Color(color).multiplyScalar(0.3),
     roughness: 0.4,
     metalness: 0.1
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
+  const body = new THREE.Mesh(geo, mat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
 
+  // Weapon
+  const weaponDef = WEAPONS[weaponId];
+  const weaponColor = weaponDef.type === "hitscan" ? 0x81e6d9 : 0xf77f00;
+  
+  const wGeo = new THREE.BoxGeometry(0.2, 0.2, 1.2);
+  const wMat = new THREE.MeshStandardMaterial({ color: weaponColor });
+  const weaponMesh = new THREE.Mesh(wGeo, wMat);
+  
+  // Position weapon slightly forward and right
+  weaponMesh.position.set(0.4, 0.2, 0.6);
+  body.add(weaponMesh); // Attach to body so it moves with it
+
+  return group;
+}

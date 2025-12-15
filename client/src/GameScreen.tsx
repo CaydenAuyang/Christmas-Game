@@ -16,9 +16,15 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
   const [hud, setHud] = useState<HudState | null>(null);
 
   useEffect(() => {
-    if (!mountRef.current || mode === "menu") return;
+    if (!mountRef.current) return;
+    // Cleanup previous instance
+    if (clientRef.current) {
+      clientRef.current.stop();
+      clientRef.current.dispose();
+    }
+    
     const client = new GameClient(mountRef.current, {
-      mode: mode === "menu" ? "bots" : mode,
+      mode,
       mapId: map,
       playerName,
       loadout,
@@ -26,6 +32,7 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
     });
     clientRef.current = client;
     client.start();
+    
     return () => {
       client.stop();
       client.dispose();
@@ -36,48 +43,58 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
   return (
     <div className="game-shell">
       <div ref={mountRef} className="canvas-container" />
-      {mode === "menu" && <OverlayMessage text="Choose a mode to start playing" />}
+      
+      {/* Crosshair */}
+      {mode !== "menu" && <div className="crosshair" />}
+
+      {/* HUD only in game modes */}
       {mode !== "menu" && hud && (
-        <div className="hud">
-          <div className="hud-row">
-            <HudBox label="Health" value={`${Math.max(0, Math.round(hud.hp))}`} />
-            <HudBox label="Armor" value={`${Math.max(0, Math.round(hud.armor))}`} />
-            <HudBox label="Weapon" value={WEAPONS[hud.weapon].name} />
-            <HudBox label="Ammo" value={`${hud.magAmmo} / ${hud.reserveAmmo}`} />
-          </div>
-          <div className="hud-row">
-            <div className="hud-box">
-              <div className="label">Mode</div>
-              <div className="value">{hud.mode === "bots" ? "Bots" : "Multiplayer"}</div>
+        <div className="hud-container">
+          <div className="hud-group">
+            <div className="health-box">
+              <div className="hud-value">{Math.round(hud.hp)}</div>
+              <div className="hud-label">Health</div>
             </div>
-            <div className="hud-box">
-              <div className="label">Map</div>
-              <div className="value">{MAPS[hud.map].name}</div>
-            </div>
-            <div className="hud-box">
-              <div className="label">Score</div>
-              <div className="value">{hud.score}</div>
-            </div>
-            <div className="hud-box">
-              <button className="button ghost" onClick={onExit} style={{ pointerEvents: "auto" }}>
-                Exit to Menu
-              </button>
+            <div className="health-box" style={{ borderColor: "#4ea0ff" }}>
+              <div className="hud-value" style={{ color: "#4ea0ff" }}>{Math.round(hud.armor)}</div>
+              <div className="hud-label">Shield</div>
             </div>
           </div>
+
+          <div className="hud-group">
+             {/* Weapon Info */}
+             <div className="ammo-box" style={{ minWidth: 150 }}>
+                <div className="hud-value" style={{ fontSize: 18, color: "white" }}>
+                    {WEAPONS[hud.weapon].name}
+                </div>
+                <div className="hud-label">Weapon</div>
+             </div>
+          </div>
+
+          <div className="hud-group">
+            <div className="ammo-box">
+              <div className="hud-value">{hud.magAmmo}</div>
+              <div className="hud-label">Ammo</div>
+            </div>
+            <div className="grenade-box">
+              <div className="hud-value">{hud.score}</div>
+              <div className="hud-label">Score</div>
+            </div>
+          </div>
+          
+          <button 
+            className="ss_button btn_red" 
+            style={{ position: "absolute", top: -60, right: 0, height: 36, fontSize: 14 }}
+            onClick={onExit}
+          >
+            Exit
+          </button>
         </div>
       )}
+      
       {mode === "multiplayer" && (
-        <OverlayMessage text="Multiplayer stub: connect server to enable online play." />
+        <OverlayMessage text="Multiplayer Beta: Connecting..." />
       )}
-    </div>
-  );
-}
-
-function HudBox({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="hud-box">
-      <div className="label">{label}</div>
-      <div className="value">{value}</div>
     </div>
   );
 }
@@ -87,18 +104,18 @@ function OverlayMessage({ text }: { text: string }) {
     <div
       style={{
         position: "absolute",
-        inset: 0,
+        top: 20,
+        left: 0, 
+        right: 0,
         display: "flex",
-        alignItems: "center",
         justifyContent: "center",
         pointerEvents: "none",
         color: "#d8f3ff",
         fontWeight: 700,
-        letterSpacing: "0.06em"
+        textShadow: "0 2px 4px rgba(0,0,0,0.5)"
       }}
     >
       {text}
     </div>
   );
 }
-

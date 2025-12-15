@@ -7,8 +7,12 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "target": "ES2022",
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@christmas/shared": ["../shared/dist/index.d.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../shared/tsconfig.json" }]
 }
 

@@ -1,4 +1,4 @@
-import { Room, Client } from "colyseus";
+import Colyseus from "colyseus";
 import { Schema, type, MapSchema } from "@colyseus/schema";
 import { MAPS, WEAPONS, type MapId, type PlayerInput, type WeaponId } from "@christmas/shared";
 
@@ -29,7 +29,7 @@ interface PendingInput {
   weapon: WeaponId;
 }
 
-export class BattleRoom extends Room<BattleState> {
+export class BattleRoom extends Colyseus.Room<BattleState> {
   private inputs = new Map<string, PendingInput>();
   private velocities = new Map<string, { x: number; y: number; z: number }>();
   private nextFire = new Map<string, number>();
@@ -54,7 +54,7 @@ export class BattleRoom extends Room<BattleState> {
     this.setSimulationInterval((deltaTime) => this.simulate(deltaTime / 1000), 50);
   }
 
-  onJoin(client: Client, options: { name?: string; weapon?: WeaponId }) {
+  onJoin(client: Colyseus.Client, options: { name?: string; weapon?: WeaponId }) {
     const p = new PlayerState();
     p.id = client.sessionId;
     p.name = options.name || "Player";
@@ -67,7 +67,7 @@ export class BattleRoom extends Room<BattleState> {
     this.nextFire.set(client.sessionId, 0);
   }
 
-  onLeave(client: Client) {
+  onLeave(client: Colyseus.Client) {
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
     this.velocities.delete(client.sessionId);

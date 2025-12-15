@@ -26,101 +26,7 @@ export default function App() {
   const backToMenu = () => setMode("menu");
 
   return (
-    <div className="app-shell">
-      <div className="panel">
-        <div className="title">Christmas Shock</div>
-        <div className="subtitle">Holiday FPS — ShellShockers-style</div>
-
-        <div className="section">
-          <div className="label">Player</div>
-          <input
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.2)",
-              background: "rgba(255,255,255,0.05)",
-              color: "#fff",
-              fontWeight: 700
-            }}
-            placeholder="Snowball"
-          />
-        </div>
-
-        <div className="section">
-          <div className="label">Map</div>
-          <div className="card-grid">
-            {Object.values(MAPS).map((m) => (
-              <div
-                key={m.id}
-                className={`card ${map === m.id ? "selected" : ""}`}
-                onClick={() => setMap(m.id)}
-              >
-                <div className="map-preview" style={{ backgroundImage: gradientFor(m.id) }} />
-                <div className="value">{m.name}</div>
-                <div className="label">{m.description}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="section">
-          <div className="label">Loadout</div>
-          <div className="loadout-grid">
-            {weaponOptions.map((weapon) => (
-              <div
-                key={weapon.id}
-                className={`card ${
-                  primary === weapon.id || secondary === weapon.id ? "selected" : ""
-                }`}
-                onClick={() =>
-                  primary === weapon.id ? setSecondary(weapon.id) : setPrimary(weapon.id)
-                }
-              >
-                <div className="value">{weapon.name}</div>
-                <div className="label">
-                  {weapon.type === "hitscan" ? "Hitscan" : "Projectile"} · {weapon.magSize} mag
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="section">
-          <div className="label">Avatar</div>
-          <div className="loadout-grid">
-            {AVATARS.map((avatar) => (
-              <div
-                key={avatar.id}
-                className={`card ${avatarId === avatar.id ? "selected" : ""}`}
-                onClick={() => setAvatarId(avatar.id)}
-              >
-                <div
-                  style={{
-                    height: 60,
-                    borderRadius: 8,
-                    marginBottom: 8,
-                    background: `linear-gradient(135deg, ${avatar.primaryColor}, ${avatar.accentColor})`
-                  }}
-                />
-                <div className="value">{avatar.name}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="section menu-bar">
-          <button className="button" onClick={() => startMode("bots")}>
-            Play Solo (Bots)
-          </button>
-          <button className="button secondary" onClick={() => startMode("multiplayer")}>
-            Multiplayer
-          </button>
-        </div>
-      </div>
-
+    <div className="app-root">
       <div className="game-shell">
         <GameScreen
           mode={mode}
@@ -130,6 +36,100 @@ export default function App() {
           onExit={backToMenu}
         />
       </div>
+
+      {mode === "menu" && (
+        <div className="shell-overlay">
+          <header className="main-header">
+            <div className="game-logo">CHRISTMAS SHOCK</div>
+          </header>
+          
+          <div className="main-layout">
+            <div className="column">
+              <div className="ss_bigtab" style={{ cursor: "default", height: "auto" }}>
+                <div className="hud-label" style={{ marginBottom: 10 }}>Loadout</div>
+                <div style={{ display: "grid", gap: 8, width: "100%" }}>
+                  {weaponOptions.map((weapon) => (
+                    <div
+                      key={weapon.id}
+                      className={`ss_bigtab ${
+                        primary === weapon.id ? "selected" : ""
+                      }`}
+                      style={{ minHeight: 80, padding: 10 }}
+                      onClick={() => setPrimary(weapon.id)}
+                    >
+                      <div className="hud-value" style={{ fontSize: 18 }}>{weapon.name}</div>
+                      <div className="hud-label">
+                        {weapon.type === "hitscan" ? "Hitscan" : "Projectile"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="column center">
+              <div style={{ width: "100%", maxWidth: 400 }}>
+                <input
+                  className="ss_field"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  placeholder="Enter Name"
+                />
+                <button className="ss_button btn_play" onClick={() => startMode("bots")}>
+                  PLAY
+                </button>
+                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                  <button className="ss_button btn_blue" style={{ flex: 1 }} onClick={() => startMode("multiplayer")}>
+                    Servers
+                  </button>
+                  <button className="ss_button btn_red" style={{ flex: 1 }}>
+                    Login
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="column">
+              <div className="ss_bigtab" style={{ cursor: "default" }}>
+                <div className="hud-label" style={{ marginBottom: 10 }}>Map Selection</div>
+                <div style={{ display: "grid", gap: 8, width: "100%" }}>
+                  {Object.values(MAPS).map((m) => (
+                    <div
+                      key={m.id}
+                      className={`ss_bigtab ${map === m.id ? "selected" : ""}`}
+                      style={{ minHeight: 100, padding: 10 }}
+                      onClick={() => setMap(m.id)}
+                    >
+                      <div className="map-bg" style={{ backgroundImage: gradientFor(m.id) }} />
+                      <div className="hud-value" style={{ fontSize: 16 }}>{m.name}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="ss_bigtab" style={{ cursor: "default", marginTop: "auto" }}>
+                 <div className="hud-label">Skins</div>
+                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
+                    {AVATARS.map(avatar => (
+                        <div 
+                            key={avatar.id}
+                            onClick={() => setAvatarId(avatar.id)}
+                            style={{ 
+                                width: 30, 
+                                height: 30, 
+                                borderRadius: "50%", 
+                                background: avatar.primaryColor,
+                                border: avatarId === avatar.id ? "2px solid white" : "none",
+                                cursor: "pointer"
+                            }}
+                        />
+                    ))}
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -139,4 +139,3 @@ function gradientFor(map: MapId): string {
   if (map === "hell") return "linear-gradient(135deg,#5a0b0b,#f25f5c)";
   return "linear-gradient(135deg,#0b3954,#1f7a8c)";
 }
-

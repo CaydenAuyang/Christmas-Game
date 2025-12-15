@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer } from "http";
-import { Server } from "colyseus";
+import Colyseus from "colyseus";
 import { BattleRoom } from "./rooms/BattleRoom.js";
 
 const PORT = Number(process.env.PORT) || 2567;
@@ -21,7 +21,7 @@ app.get("/servers", (req, res) => {
 });
 
 const httpServer = createServer(app);
-const gameServer = new Server({
+const gameServer = new Colyseus.Server({
   server: httpServer
 });
 
