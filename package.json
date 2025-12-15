@@ -1,0 +1,20 @@
+{
+  "name": "christmas-shellshock",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -C client dev",
+    "build": "pnpm -C client build && pnpm -C server build",
+    "lint": "pnpm -C client lint && pnpm -C server lint",
+    "format": "pnpm -C client format && pnpm -C server format",
+    "server": "pnpm -C server start",
+    "typecheck": "pnpm -C client typecheck && pnpm -C server typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "packageManager": "pnpm@9.0.0"
+  }
+}
+
