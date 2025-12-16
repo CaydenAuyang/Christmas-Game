@@ -136,6 +136,11 @@ export class GameClient {
     this.loadMap(options.mapId);
     this.spawnPlayer(options.playerName);
 
+    // Runtime Patch for Stale Cache: Ensure new values are applied
+    if (WEAPONS.candy_shotgun) WEAPONS.candy_shotgun.magSize = 12;
+    if (WEAPONS.gift_launcher) WEAPONS.gift_launcher.magSize = 6;
+    if (WEAPONS.icicle_rifle) WEAPONS.icicle_rifle.magSize = 15;
+
     if (this.mode === "bots") {
       this.spawnBots(6);
     } else if (this.mode === "adventure") {
