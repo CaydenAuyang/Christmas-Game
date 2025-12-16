@@ -22,17 +22,18 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
       clientRef.current.stop();
       clientRef.current.dispose();
     }
-    
+
     const client = new GameClient(mountRef.current, {
       mode,
       mapId: map,
       playerName,
       loadout,
-      onHud: setHud
+      onHud: setHud,
+      onExit
     });
     clientRef.current = client;
     client.start();
-    
+
     return () => {
       client.stop();
       client.dispose();
@@ -43,7 +44,7 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
   return (
     <div className="game-shell">
       <div ref={mountRef} className="canvas-container" />
-      
+
       {/* Crosshair */}
       {mode !== "menu" && <div className="crosshair" />}
 
@@ -59,16 +60,21 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
               <div className="hud-value" style={{ color: "#4ea0ff" }}>{Math.round(hud.armor)}</div>
               <div className="hud-label">Shield</div>
             </div>
+            {hud.stageInfo && (
+              <div style={{ marginLeft: 20, color: "gold", fontWeight: "bold", textShadow: "0 2px 4px black" }}>
+                {hud.stageInfo}
+              </div>
+            )}
           </div>
 
           <div className="hud-group">
-             {/* Weapon Info */}
-             <div className="ammo-box" style={{ minWidth: 150 }}>
-                <div className="hud-value" style={{ fontSize: 18, color: "white" }}>
-                    {WEAPONS[hud.weapon].name}
-                </div>
-                <div className="hud-label">Weapon</div>
-             </div>
+            {/* Weapon Info */}
+            <div className="ammo-box" style={{ minWidth: 150 }}>
+              <div className="hud-value" style={{ fontSize: 18, color: "white" }}>
+                {WEAPONS[hud.weapon].name}
+              </div>
+              <div className="hud-label">Weapon</div>
+            </div>
           </div>
 
           <div className="hud-group">
@@ -81,9 +87,9 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
               <div className="hud-label">Score</div>
             </div>
           </div>
-          
-          <button 
-            className="ss_button btn_red" 
+
+          <button
+            className="ss_button btn_red"
             style={{ position: "absolute", top: -60, right: 0, height: 36, fontSize: 14 }}
             onClick={onExit}
           >
@@ -91,9 +97,37 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
           </button>
         </div>
       )}
-      
+
+      {mode !== "menu" && (
+        <div className="controls-overlay">
+          <div>WASD - Move</div>
+          <div>SPACE - Jump</div>
+          <div>LMB - Shoot</div>
+          <div>R - Reload</div>
+          <div>MOUSE - Aim</div>
+        </div>
+      )}
+
       {mode === "multiplayer" && (
         <OverlayMessage text="Multiplayer Beta: Connecting..." />
+      )}
+      {mode !== "menu" && hud && hud.bannerText && (
+        <div style={{
+          position: "absolute",
+          top: "30%",
+          left: 0,
+          right: 0,
+          textAlign: "center",
+          fontSize: 72,
+          fontWeight: 900,
+          color: "#fff",
+          textShadow: "0 0 20px #ff0000, 0 0 10px #000",
+          fontFamily: "var(--font-heading)",
+          pointerEvents: "none",
+          zIndex: 999
+        }}>
+          {hud.bannerText}
+        </div>
       )}
     </div>
   );
@@ -105,7 +139,7 @@ function OverlayMessage({ text }: { text: string }) {
       style={{
         position: "absolute",
         top: 20,
-        left: 0, 
+        left: 0,
         right: 0,
         display: "flex",
         justifyContent: "center",

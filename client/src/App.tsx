@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { AVATARS, MAPS, WEAPONS, type MapId, type WeaponId } from "@christmas/shared";
 import GameScreen from "./GameScreen";
 
-type Mode = "menu" | "bots" | "multiplayer";
+type Mode = "menu" | "bots" | "multiplayer" | "adventure";
 
 const weaponOptions = Object.values(WEAPONS);
 
@@ -42,7 +42,7 @@ export default function App() {
           <header className="main-header">
             <div className="game-logo">CHRISTMAS SHOCK</div>
           </header>
-          
+
           <div className="main-layout">
             <div className="column">
               <div className="ss_bigtab" style={{ cursor: "default", height: "auto" }}>
@@ -51,9 +51,8 @@ export default function App() {
                   {weaponOptions.map((weapon) => (
                     <div
                       key={weapon.id}
-                      className={`ss_bigtab ${
-                        primary === weapon.id ? "selected" : ""
-                      }`}
+                      className={`ss_bigtab ${primary === weapon.id ? "selected" : ""
+                        }`}
                       style={{ minHeight: 80, padding: 10 }}
                       onClick={() => setPrimary(weapon.id)}
                     >
@@ -77,6 +76,9 @@ export default function App() {
                 />
                 <button className="ss_button btn_play" onClick={() => startMode("bots")}>
                   PLAY
+                </button>
+                <button className="ss_button btn_play" style={{ marginTop: 10, background: "linear-gradient(#ff8e2b, #b35900)" }} onClick={() => startMode("adventure")}>
+                  ADVENTURE
                 </button>
                 <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
                   <button className="ss_button btn_blue" style={{ flex: 1 }} onClick={() => startMode("multiplayer")}>
@@ -106,25 +108,25 @@ export default function App() {
                   ))}
                 </div>
               </div>
-              
+
               <div className="ss_bigtab" style={{ cursor: "default", marginTop: "auto" }}>
-                 <div className="hud-label">Skins</div>
-                 <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
-                    {AVATARS.map(avatar => (
-                        <div 
-                            key={avatar.id}
-                            onClick={() => setAvatarId(avatar.id)}
-                            style={{ 
-                                width: 30, 
-                                height: 30, 
-                                borderRadius: "50%", 
-                                background: avatar.primaryColor,
-                                border: avatarId === avatar.id ? "2px solid white" : "none",
-                                cursor: "pointer"
-                            }}
-                        />
-                    ))}
-                 </div>
+                <div className="hud-label">Skins</div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
+                  {AVATARS.map(avatar => (
+                    <div
+                      key={avatar.id}
+                      onClick={() => setAvatarId(avatar.id)}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: "50%",
+                        background: avatar.primaryColor,
+                        border: avatarId === avatar.id ? "2px solid white" : "none",
+                        cursor: "pointer"
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </div>

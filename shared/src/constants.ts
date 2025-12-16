@@ -19,43 +19,43 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
     id: "snow_smg",
     name: "Snowburst SMG",
     type: "hitscan",
-    damage: 11,
-    fireRate: 12,
+    damage: 50, // Buffed
+    fireRate: 20, // Super fast
     spread: 0.035,
-    magSize: 32,
-    reloadTime: 1.8
+    magSize: 999, // Infinite
+    reloadTime: 0.1
   },
   candy_shotgun: {
     id: "candy_shotgun",
     name: "Candy Cane Shotgun",
     type: "hitscan",
-    damage: 10,
+    damage: 200, // 200 per pellet -> Guaranteed kill (even just 1 pellet)
     pellets: 9,
-    fireRate: 1.2,
+    fireRate: 5, // Fast pump
     spread: 0.18,
-    magSize: 6,
-    reloadTime: 2.4
+    magSize: 12,
+    reloadTime: 0.1
   },
   gift_launcher: {
     id: "gift_launcher",
     name: "Gift Launcher",
     type: "projectile",
-    damage: 80,
-    fireRate: 0.75,
+    damage: 1000, // Nuke
+    fireRate: 5,
     spread: 0.05,
-    magSize: 4,
-    reloadTime: 2.6,
-    projectileSpeed: 36
+    magSize: 6,
+    reloadTime: 0.1,
+    projectileSpeed: 60
   },
   icicle_rifle: {
     id: "icicle_rifle",
     name: "Icicle Rifle",
     type: "hitscan",
-    damage: 58,
-    fireRate: 0.9,
-    spread: 0.01,
-    magSize: 5,
-    reloadTime: 2.3
+    damage: 1000, // Insta kill
+    fireRate: 8,
+    spread: 0.001,
+    magSize: 15,
+    reloadTime: 0.1
   }
 };
 

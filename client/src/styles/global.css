@@ -7,7 +7,7 @@
   --ss-red: #d13737;
   --ss-red-dark: #911e1e;
   --ss-yellow: #ffc800;
-  --ss-text-shadow: 0 2px 0 rgba(0,0,0,0.5);
+  --ss-text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
   font-family: "Nunito", "Segoe UI", sans-serif;
 }
 
@@ -18,9 +18,19 @@
 
 body {
   margin: 0;
+  padding: 0;
   background: #0b1a2c;
   color: #fff;
   overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .app-root {
@@ -33,6 +43,14 @@ body {
   position: absolute;
   inset: 0;
   z-index: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* Shell Shockers Style Components */
@@ -52,7 +70,7 @@ body {
   border-radius: 8px;
   cursor: pointer;
   transition: transform 0.1s, filter 0.1s;
-  box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
   position: relative;
 }
 
@@ -86,13 +104,13 @@ body {
   font-size: 32px;
   width: 100%;
   background: linear-gradient(to bottom, #9ce64b, #6ab028);
-  box-shadow: 0 6px 0 #4a7a18, 0 10px 20px rgba(0,0,0,0.3);
+  box-shadow: 0 6px 0 #4a7a18, 0 10px 20px rgba(0, 0, 0, 0.3);
   border: 3px solid #fff;
 }
 
 .ss_bigtab {
   background: rgba(16, 37, 66, 0.9);
-  border: 2px solid rgba(255,255,255,0.1);
+  border: 2px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 15px;
   cursor: pointer;
@@ -106,7 +124,7 @@ body {
 }
 
 .ss_bigtab:hover {
-  border-color: rgba(255,255,255,0.4);
+  border-color: rgba(255, 255, 255, 0.4);
   transform: scale(1.02);
 }
 
@@ -117,8 +135,8 @@ body {
 }
 
 .ss_field {
-  background: rgba(0,0,0,0.5);
-  border: 2px solid rgba(255,255,255,0.2);
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   color: white;
   padding: 12px;
@@ -153,10 +171,11 @@ body {
   font-size: 48px;
   font-weight: 900;
   color: #fff;
-  text-shadow: 0 4px 0 #000, 0 8px 10px rgba(0,0,0,0.5);
+  text-shadow: 0 4px 0 #000, 0 8px 10px rgba(0, 0, 0, 0.5);
   letter-spacing: 2px;
   /* Simple text logo for now, can be replaced with img */
   background: -webkit-linear-gradient(#fff, #ccc);
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   filter: drop-shadow(0 4px 0 #000);
@@ -183,7 +202,7 @@ body {
   pointer-events: none;
 }
 
-.column.center > * {
+.column.center>* {
   pointer-events: auto;
 }
 
@@ -205,32 +224,42 @@ body {
   gap: 15px;
 }
 
-.health-box, .ammo-box, .grenade-box {
-  background: rgba(0,0,0,0.6);
+.health-box,
+.ammo-box,
+.grenade-box {
+  background: rgba(0, 0, 0, 0.6);
   border-radius: 8px;
   padding: 10px 15px;
   display: flex;
   flex-direction: column;
   align-items: center;
   min-width: 80px;
-  border: 2px solid rgba(255,255,255,0.1);
+  border: 2px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(4px);
 }
 
 .hud-value {
   font-size: 28px;
   font-weight: 900;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
-.health-box .hud-value { color: #ff5e5e; }
-.ammo-box .hud-value { color: #ffc800; }
-.grenade-box .hud-value { color: #4ea0ff; }
+.health-box .hud-value {
+  color: #ff5e5e;
+}
+
+.ammo-box .hud-value {
+  color: #ffc800;
+}
+
+.grenade-box .hud-value {
+  color: #4ea0ff;
+}
 
 .hud-label {
   font-size: 10px;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
   font-weight: 700;
   letter-spacing: 1px;
 }
@@ -245,14 +274,26 @@ body {
   pointer-events: none;
 }
 
-.crosshair::before, .crosshair::after {
+.crosshair::before,
+.crosshair::after {
   content: "";
   position: absolute;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
 }
 
-.crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; }
-.crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+.crosshair::before {
+  top: 9px;
+  left: 0;
+  width: 20px;
+  height: 2px;
+}
+
+.crosshair::after {
+  top: 0;
+  left: 9px;
+  width: 2px;
+  height: 20px;
+}
 
 /* Map Preview in Card */
 .map-bg {
@@ -262,4 +303,24 @@ body {
   margin-bottom: 8px;
   background-size: cover;
   background-position: center;
+}
+
+.controls-overlay {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 15px;
+  border-radius: 8px;
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+  pointer-events: none;
+  font-family: monospace;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.controls-overlay div {
+  margin-bottom: 4px;
 }
