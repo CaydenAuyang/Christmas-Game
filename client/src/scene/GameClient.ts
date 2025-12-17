@@ -6,6 +6,10 @@ import { MAP_DEFINITIONS } from "../maps/mapData";
 import { buildSceneForMap } from "../maps/loadMap";
 import { AUDIO } from "../audio/AudioManager";
 
+// Load Custom Face Texture
+const botFaceTexSnowman = new THREE.TextureLoader().load('face.jpg');
+const botFaceTexGinger = new THREE.TextureLoader().load('face_ginger.png');
+
 export type GameMode = "menu" | "bots" | "multiplayer" | "adventure";
 
 export interface GameClientOptions {
@@ -15,6 +19,8 @@ export interface GameClientOptions {
   loadout: { primary: WeaponId; secondary: WeaponId; avatarId: string };
   onHud?: (hud: HudState) => void;
   onExit?: () => void;
+  bannerText?: string; // New field for UI
+  powerupTimer?: number; // ADDED
 }
 
 export interface HudState {
@@ -28,6 +34,7 @@ export interface HudState {
   map: MapId;
   stageInfo?: string; // New field for UI
   bannerText?: string;
+  powerupTimer?: number; // ADDED
 }
 
 interface Entity {
@@ -46,6 +53,7 @@ interface Entity {
   nextFire: number;
   target?: Entity;
   healthBar?: THREE.Group;
+  botType?: 'snowman' | 'gingerbread' | 'boss'; // ADDED
   strafeDir: number;
   strafeTimer: number;
   // Melee Visuals
@@ -54,6 +62,8 @@ interface Entity {
   swordMesh?: THREE.Group; // Reference to rotate
   // Respawn
   respawnTimer: number;
+  // Status Effects
+  slowTimer?: number; // ADDED
 }
 
 interface Projectile {
@@ -63,6 +73,22 @@ interface Projectile {
   damage: number;
   radius: number;
   life: number;
+  isAxe?: boolean;
+  weaponId?: WeaponId; // ADDED
+}
+
+interface Item {
+  id: string;
+  type: 'health_potion' | 'powerup';
+  mesh: THREE.Group;
+  position: THREE.Vector3;
+  life: number;
+}
+
+interface PowerupState {
+  active: boolean;
+  timer: number;
+  type: 'damage_speed_ammo'; // Or other types like 'invincibility', 'speed'
 }
 
 export class GameClient {
@@ -76,6 +102,9 @@ export class GameClient {
   private player!: Entity;
   private bots: Entity[] = [];
   private projectiles: Projectile[] = [];
+  private nextItemSpawnTime: number = 10;
+  private items: Item[] = [];
+  private mapGroup!: THREE.Group; // ADDED
   private mode: GameMode;
   private loadout: GameClientOptions["loadout"];
   private hud?: (hud: HudState) => void;
@@ -92,6 +121,19 @@ export class GameClient {
     yaw: 0,
     pitch: 0
   };
+
+  // State for Spawning Items
+  private stageTimer = 0;
+  private itemSpawns = {
+    potion1: false,
+    powerup1: false,
+    potion2: false,
+    powerup2: false,
+    powerup3: false,
+    powerup4: false
+  };
+
+  private powerupState: PowerupState = { active: false, timer: 0, type: 'damage_speed_ammo' };
   private netClient: ColyseusClient | null = null;
   private netRoom: Room | null = null;
   private remoteMeshes = new Map<string, THREE.Group>();
@@ -211,8 +253,15 @@ export class GameClient {
     );
     this.scene.add(ambient);
 
-    const mapGroup = buildSceneForMap(this.map);
-    this.scene.add(mapGroup);
+    // Initial simple lighting based on map
+    if (this.map.id === "heaven") {
+      const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+      pointLight.position.set(0, 10, 0);
+      this.scene.add(pointLight);
+    }
+
+    this.mapGroup = buildSceneForMap(this.map);
+    this.scene.add(this.mapGroup);
   }
 
   private spawnPlayer(name: string) {
@@ -307,6 +356,13 @@ export class GameClient {
     this.bannerText = `STAGE ${this.stage}`;
     this.updateHud();
     this.speak(`Stage ${this.stage}`);
+
+    // Reset Item Logic
+    this.items.forEach(i => this.scene.remove(i.mesh));
+    this.items = [];
+    this.stageTimer = 0;
+    this.itemSpawns = { potion1: false, powerup1: false, potion2: false, powerup2: false, powerup3: false, powerup4: false };
+    this.nextItemSpawnTime = 10; // Reset spawn timer
 
     // 3... 2... 1... GO logic
     let count = 3;
@@ -420,6 +476,19 @@ export class GameClient {
     h1.position.set(0.6, 5.2, 0);
     h1.rotation.z = -0.5;
     bossGroup.add(h1);
+
+    // BOSS FACE (HUGE)
+    const bossFaceGeo = new THREE.PlaneGeometry(2.0, 2.0); // HUGE
+    const bossFaceMat = new THREE.MeshBasicMaterial({ map: botFaceTexSnowman, transparent: true }); // Use face.jpg
+    const bossFace = new THREE.Mesh(bossFaceGeo, bossFaceMat);
+    bossFace.position.set(0, 4.5, 1.3); // In front of head (r=1.2)
+    bossFace.rotation.y = 0; // Boss faces +Z initially? No, let's look at logic.
+    // Boss head is sphere. If boss rotates Y, children rotate.
+    // Usually "Forward" is -Z?
+    // Let's assume standard -Z forward.
+    bossFace.position.set(0, 4.5, -1.3);
+    bossFace.rotation.y = Math.PI;
+    bossGroup.add(bossFace);
     const h2 = new THREE.Mesh(hornGeo, hornMat);
     h2.position.set(-0.6, 5.2, 0);
     h2.rotation.z = 0.5;
@@ -447,41 +516,49 @@ export class GameClient {
     this.bots = [];
     for (let i = 0; i < count; i++) {
       const spawn = pickRandom(this.map.spawnPoints);
-      const weapon: WeaponId = "snow_smg";
-      this.bots.push({
-        id: `bot-${i}`,
-        name: `Bot ${i + 1}`,
+      // Randomize Type
+      const isGinger = Math.random() < 0.3; // 30% chance for Gingerbread
+      const botType = isGinger ? 'gingerbread' : 'snowman';
+      const weapon: WeaponId = isGinger ? 'gingerbread_axe' : 'snow_smg';
+      const hp = isGinger ? 60 : 100; // Gingerbread is squishier? or same?
+
+      const bot: Entity = {
+        id: `bot_${Date.now()}_${i}`,
+        name: isGinger ? "Gingerbread Man" : "Snowman",
         position: new THREE.Vector3(...spawn),
         velocity: new THREE.Vector3(),
         yaw: Math.random() * Math.PI * 2,
         pitch: 0,
-        hp: 100,
-        armor: 10,
+        hp,
+        armor: 0, // Gingerbread has no armor
         weapon,
-        magAmmo: 0,
-        reserveAmmo: 0,
+        magAmmo: Infinity,
+        reserveAmmo: Infinity,
         isBot: true,
-        nextFire: 0,
+        botType,
+        nextFire: Math.random() * 2,
         strafeDir: 0,
         strafeTimer: 0,
         swingProgress: 0,
         isSwinging: false,
         respawnTimer: 0
-      });
-      const botMeshGroup = makePlayerMesh(weapon, true);
-      botMeshGroup.position.copy(this.bots[i].position);
-      botMeshGroup.rotation.y = this.bots[i].yaw;
-      botMeshGroup.userData.entityId = this.bots[i].id; // Hit detection tag
-      this.scene.add(botMeshGroup);
+      };
 
-      (this.bots[i] as any).mesh = botMeshGroup;
+      // MESH
+      const mesh = isGinger ? makeGingerbreadMesh() : makePlayerMesh(weapon, true);
+      mesh.position.copy(bot.position);
+      mesh.userData.entityId = bot.id;
+      this.scene.add(mesh);
+      (bot as any).mesh = mesh;
 
-      const sword = botMeshGroup.userData.sword;
-      this.bots[i].swordMesh = sword;
+      const sword = mesh.userData.sword;
+      bot.swordMesh = sword; // This will be undefined for gingerbread, which is fine
 
       const hb = makeHealthBar();
       this.scene.add(hb);
-      this.bots[i].healthBar = hb;
+      bot.healthBar = hb;
+
+      this.bots.push(bot);
     }
   }
 
@@ -597,6 +674,7 @@ export class GameClient {
     }
 
     this.stepProjectiles(dt);
+    this.stepItems(dt); // ADDED
     this.updateTrails(dt);
 
     // Victory Fireworks
@@ -620,6 +698,21 @@ export class GameClient {
       this.camera.updateProjectionMatrix();
     }
 
+    // Powerup Timer Logic
+    if (this.powerupState.active) {
+      this.powerupState.timer -= dt;
+      if (this.powerupState.timer <= 0) {
+        this.powerupState.active = false;
+        this.speak("Powerup ended.");
+      }
+    }
+
+    // Adventure Mode Item Spawning Logic
+    if (this.mode === 'adventure') {
+      this.stageTimer += dt;
+      this.checkItemSpawns();
+    }
+
     this.updateHud();
     this.renderer.render(this.scene, this.camera);
   };
@@ -631,14 +724,143 @@ export class GameClient {
       t.life -= dt;
       if (t.life <= 0) {
         this.scene.remove(t.mesh);
+        // Clean up Material (Geometry is shared/cached, do NOT dispose)
+        if (t.mesh.material) {
+          (t.mesh.material as THREE.Material).dispose();
+        }
         this.trails.splice(i, 1);
       } else {
         const pct = t.life / t.maxLife; // 1 -> 0
         (t.mesh.material as THREE.Material).opacity = pct;
         // Shrink thickness
-        t.mesh.scale.set(pct * t.startScale, 1, pct * t.startScale);
+        // Shrink thickness
+        // t.startScale is the original thickness
+        const s = pct * t.startScale;
+        t.mesh.scale.set(s, s, t.mesh.scale.z); // Maintain Z scale (length) if we want, or shrink it too? 
+        // Original code scaled everything. But now we use Z for length.
+        // Let's just shrink thickness.
       }
     }
+  }
+
+
+  private checkItemSpawns() {
+    // Every 10 seconds per stage (Unlimited spawns as user requested: "spawn each 12 times" in 120s)
+    // We can use modulo logic or a counter.
+    // Let's use a counter for "next spawn time" to support infinite spawns.
+    if (!this.nextItemSpawnTime) this.nextItemSpawnTime = 10;
+
+    if (this.stageTimer > this.nextItemSpawnTime) {
+      // Spawn both or random? User said "health and damage power ups will spawn every 10 seconds"
+      // Let's alternate or spawn both.
+      // "it should spawn each 12 times" implies BOTH spawn.
+      this.spawnItem('health_potion');
+      this.spawnItem('powerup');
+      this.nextItemSpawnTime += 10;
+    }
+
+    // Stage 5: MORE POWERUPS (Requested: 4 total, every 15s)
+    if (this.stage === 5) {
+      if (this.stageTimer > 40 && !this.itemSpawns.powerup3) {
+        this.spawnItem('powerup');
+        this.itemSpawns.powerup3 = true;
+      }
+      if (this.stageTimer > 55 && !this.itemSpawns.powerup4) {
+        this.spawnItem('powerup');
+        this.itemSpawns.powerup4 = true;
+      }
+    }
+  }
+
+  private spawnItem(type: 'health_potion' | 'powerup') {
+    // Pick random spawn point but not colliding with others
+    const spawn = pickRandom(this.map.spawnPoints);
+    // Fuzz position a bit so not exact same spot if multiple spawn
+    const pos = new THREE.Vector3(spawn[0], spawn[1] + 1.0, spawn[2]);
+    pos.x += (Math.random() - 0.5) * 10;
+    pos.z += (Math.random() - 0.5) * 10;
+
+    // Ensure in bounds (simple clamp)
+    this.clampToBounds(pos);
+
+    const mesh = makeItemMesh(type);
+    mesh.position.copy(pos);
+    this.scene.add(mesh);
+
+    this.items.push({
+      id: `item_${Date.now()}_${Math.random()}`,
+      type,
+      mesh,
+      position: pos,
+      life: 45 // Persist for 45s
+    });
+    console.log(`Spawned ${type} at ${pos.x.toFixed(1)}, ${pos.z.toFixed(1)}`);
+  }
+
+  private stepItems(dt: number) {
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      // Animation: Rotate + Bob
+      item.mesh.rotation.y += dt;
+      item.mesh.position.y = item.position.y + Math.sin(Date.now() * 0.003) * 0.2;
+
+      // Pickup Logic
+      const dist = this.player.position.distanceTo(item.mesh.position);
+      if (dist < 2.0 && this.player.hp > 0) {
+        // PICKUP
+        if (item.type === 'health_potion') {
+          if (this.player.hp < 100) {
+            this.player.hp = Math.min(100, this.player.hp + 50);
+            this.speak("Health restored.");
+            AUDIO.playShoot('snowball'); // TODO: Better sound
+            this.showFloatingText("+50 HP", 0x00ff00);
+            this.destroyItem(i);
+            i--; continue;
+          }
+        } else if (item.type === 'powerup') {
+          this.powerupState = { active: true, timer: 10, type: 'damage_speed_ammo' };
+          this.speak("Power up!");
+          AUDIO.playShoot('snowball'); // TODO: Better sound
+          this.showFloatingText("POWER UP!", 0xffff00);
+          this.destroyItem(i);
+          i--; continue;
+        }
+      }
+
+      // Timeout ??
+      item.life -= dt;
+      // if (item.life <= 0) { this.destroyItem(i); i--; } // Maybe don't expire? 
+    }
+  }
+
+  private destroyItem(index: number) {
+    const item = this.items[index];
+    this.disposeObject(item.mesh); // Dispose recursive
+    this.items.splice(index, 1);
+  }
+
+  private disposeObject(obj: THREE.Object3D) {
+    this.scene.remove(obj);
+    obj.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (child.geometry && !child.geometry.userData?.shared) {
+          child.geometry.dispose();
+        }
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((m: any) => {
+            if (!m.userData?.shared) m.dispose();
+          });
+        }
+      }
+    });
+  }
+
+  private showFloatingText(text: string, color: number) {
+    // Just set banner briefly for now, or use HUD message
+    this.bannerText = text;
+    this.updateHud();
+    setTimeout(() => { if (this.bannerText === text) { this.bannerText = ""; this.updateHud(); } }, 1500);
   }
 
   private stepProjectiles(dt: number) {
@@ -647,33 +869,87 @@ export class GameClient {
       p.life -= dt;
       p.mesh.position.addScaledVector(p.velocity, dt);
 
+      if (p.isAxe) {
+        // Trail Logic (Every Frame = Continuous Line)
+        this.spawnParticles(p.mesh.position.clone(), 0xff0000, 1);
+      }
+
       // Collision Check
       let hit = false;
-      // Targets: Bots + Player (if p.ownerId != id)
       const targets = [...this.bots];
       if (this.player.hp > 0) targets.push(this.player);
 
       for (const t of targets) {
         if (t.id === p.ownerId) continue;
-        if (t.hp <= 0) continue;
 
-        // Radius check
-        let r = 1.0;
-        if (t.id === "boss") r = 3.5;
-
-        if (p.mesh.position.distanceTo(t.position) < r + p.radius) {
+        const dist = p.mesh.position.distanceTo(t.position);
+        if (dist < (p.radius + 0.5)) {
+          // HIT!
           hit = true;
-          applyDamage(t, p.damage);
-          AUDIO.playOof();
-          if (t.hp <= 0) AUDIO.playDeath();
+          if (t.id === 'local') {
+            applyDamage(this.player, p.damage);
+            AUDIO.playOof();
+            this.showFloatingText(`-${p.damage}`, 0xff0000);
+          } else {
+            applyDamage(t, p.damage);
+            if (t.hp <= 0) {
+              if (this.gameWon) continue;
+              AUDIO.playHit();
+            } else {
+              AUDIO.playHit();
+            }
+          }
           break;
         }
       }
 
+      // Map Check
+      if (!p.isAxe && p.mesh.position.y < 0.2) hit = true; // Snowballs hit floor
+
       if (hit || p.life <= 0) {
-        this.scene.remove(p.mesh);
+        if (p.isAxe && p.life <= 0) console.log("Axe expired (Time out)");
+        if (p.isAxe && hit) console.log("Axe HIT something");
+
+        const splashRadius = 5.0; // Reduced by 80% from 25.0
+
+        // SPLASH DAMAGE (Gift Launcher)
+        if (hit && p.weaponId === 'gift_launcher') {
+          // Visual: Red Opaque Sphere
+          const sphereGeo = new THREE.SphereGeometry(splashRadius, 16, 16);
+          const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.4 });
+          const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+          sphereMesh.position.copy(p.mesh.position);
+          this.scene.add(sphereMesh);
+
+          this.trails.push({
+            mesh: sphereMesh,
+            life: 0.5,
+            maxLife: 0.5,
+            startScale: 1.0
+          });
+
+          // Targets: All Bots + Player
+          const targets = [...this.bots];
+          if (this.player.hp > 0) targets.push(this.player);
+
+          for (const t of targets) {
+            if (t.id === 'local' && p.ownerId === 'local') continue;
+            const d = t.position.distanceTo(p.mesh.position);
+            if (d < splashRadius) {
+              const dmg = 30; // Splash damage amount
+              applyDamage(t, dmg);
+            }
+          }
+        }
+
+        // Remove projectile
+        this.disposeObject(p.mesh);
         this.projectiles.splice(i, 1);
+        continue;
       }
+
+      // LOG COUNT rarely
+      if (p.isAxe && Math.random() < 0.01) console.log("Axe alive at", p.mesh.position);
     }
   }
 
@@ -722,6 +998,20 @@ export class GameClient {
 
     this.player.velocity.x = move.x;
     this.player.velocity.z = move.z;
+
+    // Apply Slow Effect
+    if (this.player.slowTimer && this.player.slowTimer > 0) {
+      // User requested "half reduction", meaning barely slow? Or 50% less EFFECTIVE slow?
+      // Original: 0.5 (50% speed)
+      // Requested: "reduce the slowing by 50%"
+      // So instead of 50% slow, it is 25% slow? => 0.75 multiplier.
+      // User requested increase back to 25% slow.
+      // 25% slow => 0.75 multiplier.
+      this.player.velocity.x *= 0.75;
+      this.player.velocity.z *= 0.75;
+      this.player.slowTimer -= dt;
+    }
+
     this.player.velocity.y += this.map.gravity * dt;
 
     // Jump Logic: Check ground roughly
@@ -775,8 +1065,8 @@ export class GameClient {
       if (bot.hp <= 0) {
         if (this.mode === "adventure") {
           // No Respawn in Adventure
-          if ((bot as any).mesh) this.scene.remove((bot as any).mesh);
-          if (bot.healthBar) this.scene.remove(bot.healthBar);
+          if ((bot as any).mesh) this.disposeObject((bot as any).mesh);
+          if (bot.healthBar) this.disposeObject(bot.healthBar);
 
           // Remove from array
           this.bots.splice(i, 1);
@@ -825,6 +1115,106 @@ export class GameClient {
 
       const toPlayer = this.player.position.clone().sub(bot.position);
       const distance = toPlayer.length();
+      const dx = toPlayer.x;
+      const dz = toPlayer.z;
+
+      // Bot movement vector
+      const move = new THREE.Vector3();
+
+      // Gingerbread AI (REWORKED: MELEE + SLOW)
+      if (bot.botType === 'gingerbread') {
+        const idealDist = 1.0; // MELEE range
+
+        // Chase Logic
+        if (distance > idealDist) {
+          move.z = 1; // Move forward
+        }
+
+        // Strafe Randomly 
+        if ((bot as any).strafeTimer === undefined) (bot as any).strafeTimer = 0;
+        if ((bot as any).strafeDir === undefined) (bot as any).strafeDir = 1;
+
+        bot.strafeTimer -= dt;
+        if (bot.strafeTimer <= 0) {
+          bot.strafeTimer = 0.5 + Math.random() * 0.8; // Change direction faster (0.5-1.3s)
+          bot.strafeDir = Math.random() < 0.5 ? -1 : 1;
+        }
+
+        // Random "Jitter" or strong strafing
+        // User wants "more random".
+        move.x = bot.strafeDir * 2.5; // Stronger strafe (was 0.5)
+
+        // Occasional Random Backward/Forward switch?
+        // Let's keep Z chase strong but X random high.
+
+        // Attack Logic (Melee)
+        if (distance < 2.5 && bot.nextFire <= 0) {
+          // Attack!
+          // bot.isSwinging = true; // Animation? (No sword mesh, but we can bob)
+          bot.swingProgress = 1.0;
+          bot.nextFire = 1.0; // Same as Snowman speed?
+
+          // Damage + Slow
+          // Damage + Slow
+          const dmg = 3; // Reduced from 5
+          applyDamage(this.player, dmg);
+          applyDamage(this.player, dmg);
+          AUDIO.playOof();
+          this.showFloatingText(`-5 (SLOWED)`, 0x00ffff);
+
+          // Apply Slow: "slow for 1 second"
+          this.player.slowTimer = 1.0;
+        }
+
+        if (bot.nextFire > 0) bot.nextFire -= dt;
+
+        // Rotation
+        // Face player
+        const targetYaw = Math.atan2(dx, dz);
+        let diff = targetYaw - bot.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        bot.yaw += diff * 5 * dt;
+
+        // Animation Bob
+        if (bot.swingProgress > 0) {
+          bot.swingProgress -= dt * 5;
+        }
+
+      } else if (bot.botType === 'snowman' || !bot.botType) {
+        bot.yaw = Math.atan2(toPlayer.x, toPlayer.z);
+
+        if (distance > 1.8) {
+          move.z = 1; // Move forward
+        } else {
+          move.z = 0; // Stop if close
+        }
+      }
+
+      // Speed Increase logic
+      let moveSpeed = 5.5;
+      if (this.mode === "adventure") {
+        // 10% faster per stage
+        moveSpeed = 5.5 * (1 + (this.stage - 1) * 0.1);
+      } else {
+        // Bots mode: maybe make them faster over time? Or stick to 5.5
+        moveSpeed = 5.5;
+      }
+
+      // Gingerbread Speed Boost (Actually user requested: "0.5x base speed")
+      // User quote: "it is still way too fast. make it 0.5x base speed instead"
+      if (bot.botType === 'gingerbread') {
+        moveSpeed = 5.5 * 0.5; // Very slow
+      }
+
+      // Apply movement
+      const forward = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
+      const right = new THREE.Vector3(Math.cos(bot.yaw), 0, -Math.sin(bot.yaw));
+      bot.velocity.x = 0;
+      bot.velocity.z = 0;
+      bot.velocity.addScaledVector(forward, move.z * moveSpeed);
+      bot.velocity.addScaledVector(right, move.x * moveSpeed);
+
 
       // ... Separation Logic ...
       const sepVector = new THREE.Vector3();
@@ -837,26 +1227,6 @@ export class GameClient {
           const push = bot.position.clone().sub(other.position).normalize();
           sepVector.add(push);
         }
-      }
-
-      bot.yaw = Math.atan2(toPlayer.x, toPlayer.z);
-
-      // Speed Increase logic
-      let moveSpeed = 5.5;
-      if (this.mode === "adventure") {
-        // 10% faster per stage
-        moveSpeed = 5.5 * (1 + (this.stage - 1) * 0.1);
-      } else {
-        // Bots mode: maybe make them faster over time? Or stick to 5.5
-        moveSpeed = 5.5;
-      }
-
-      if (distance > 1.8) {
-        bot.velocity.x = Math.sin(bot.yaw) * moveSpeed;
-        bot.velocity.z = Math.cos(bot.yaw) * moveSpeed;
-      } else {
-        bot.velocity.x = 0;
-        bot.velocity.z = 0;
       }
 
       if (sepVector.lengthSq() > 0) {
@@ -894,36 +1264,136 @@ export class GameClient {
         green.position.x = -0.5 + (pct / 2);
       }
 
-      // ... melee logic ...
-      if (bot.isSwinging) {
-        bot.swingProgress += dt * 4;
-        if (bot.swingProgress >= 1) {
-          bot.isSwinging = false;
-          bot.swingProgress = 0;
-        }
-        if (bot.swordMesh) {
-          const base = -Math.PI / 4;
-          const swing = Math.sin(bot.swingProgress * Math.PI) * 1.5;
-          bot.swordMesh.rotation.x = base + swing;
-        }
-      } else {
-        if (bot.swordMesh) bot.swordMesh.rotation.x = -Math.PI / 4;
-
-        if (distance < 2.5) {
-          bot.nextFire -= dt;
-          if (bot.nextFire <= 0) {
-            bot.isSwinging = true;
+      // ... melee logic ... (Only for Snowmen/Krampus)
+      if (bot.botType === 'snowman' || bot.botType === 'boss') {
+        if (bot.isSwinging) {
+          bot.swingProgress += dt * 4;
+          if (bot.swingProgress >= 1) {
+            bot.isSwinging = false;
             bot.swingProgress = 0;
-            bot.nextFire = 1.0;
+          }
+          if (bot.swordMesh) {
+            const base = -Math.PI / 4;
+            const swing = Math.sin(bot.swingProgress * Math.PI) * 1.5;
+            bot.swordMesh.rotation.x = base + swing;
+          }
+        } else {
+          if (bot.swordMesh) bot.swordMesh.rotation.x = -Math.PI / 4;
 
-            if (distance < 2.5 && this.player.hp > 0) {
-              applyDamage(this.player, 15);
-              AUDIO.playOof(); // Bot hit player
-              const knock = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw)).normalize().multiplyScalar(15);
-              this.player.velocity.add(knock);
+          if (distance < 2.5) {
+            bot.nextFire -= dt;
+            if (bot.nextFire <= 0) {
+              bot.isSwinging = true;
+              bot.swingProgress = 0;
+              bot.nextFire = 1.0;
+
+              if (distance < 2.5 && this.player.hp > 0) {
+                applyDamage(this.player, 15);
+                AUDIO.playOof(); // Bot hit player
+                const knock = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw)).normalize().multiplyScalar(15);
+                this.player.velocity.add(knock);
+              }
             }
           }
         }
+      }
+    }
+  }
+
+  private shootProjectile(options: { weapon: WeaponId, position: THREE.Vector3, yaw: number, pitch: number, ownerId: string }) {
+    const weaponDef = WEAPONS[options.weapon];
+    const speed = weaponDef.projectileSpeed || 30;
+
+    // FIX: Gift Launcher shoots backwards?
+    // User report: "Aim Down to shoot Straight" -> Inverted Y?
+    // And "Backwards" -> Inverted Z?
+    // Fix: Yaw += PI (Flip Horizontal), No Negate.
+    let yaw = options.yaw;
+    let pitch = options.pitch;
+
+    if (weaponDef.id === 'gift_launcher' && options.ownerId === 'local') {
+      yaw += Math.PI; // Flip Front/Back
+      // Do not negate anything else. Standard Pitch control should work.
+    }
+
+    const dir = new THREE.Vector3(
+      Math.sin(yaw) * Math.cos(pitch),
+      Math.sin(pitch), // REMOVED negative sign (Fix aimed down issue?)
+      Math.cos(yaw) * Math.cos(pitch)
+    );
+    if (dir.lengthSq() > 0) dir.normalize();
+    else dir.set(0, 0, 1); // Fallback safe dir
+
+    const isAxe = weaponDef.id === 'gingerbread_axe';
+    let mesh: THREE.Group;
+
+    if (isAxe) {
+      // RPG MISSILE (Red Cylinder + Cone)
+      // Bypass makeProjectileMesh entirely just in case
+      console.log("FORCE SPAWNING RPG MISSILE");
+      const g = new THREE.Group();
+
+      // Body (Red Cylinder)
+      const cyl = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff0000 }) // RED
+      );
+      cyl.rotation.x = Math.PI / 2; // Lie flat
+      g.add(cyl);
+
+      // Tip (Red Cone)
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.4, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffaaaa }) // Pinkish Tip
+      );
+      cone.rotation.x = Math.PI / 2;
+      cone.position.z = 0.6; // In front
+      g.add(cone);
+
+      // Fins? (Grey Boxes)
+      const finGeo = new THREE.BoxGeometry(0.8, 0.05, 0.4);
+      const finMat = new THREE.MeshBasicMaterial({ color: 0x888888 });
+      const f1 = new THREE.Mesh(finGeo, finMat); f1.position.z = -0.3; g.add(f1);
+      const f2 = new THREE.Mesh(finGeo, finMat); f2.position.z = -0.3; f2.rotation.z = Math.PI / 2; g.add(f2);
+
+      // Make it BIGGER
+      g.scale.set(2, 2, 2);
+
+      mesh = g;
+      // Align rotation to velocity
+      mesh.lookAt(options.position.clone().add(dir));
+
+    } else {
+      mesh = makeProjectileMesh(weaponDef, false);
+    }
+
+    mesh.position.copy(options.position);
+
+    if (isAxe) console.log("Axe Position:", mesh.position, "Scale:", mesh.scale, "Parent?", mesh.parent);
+
+    // Axes spin messily, maybe random start rotation
+    if (isAxe) mesh.rotation.z = Math.random() * Math.PI;
+
+    this.scene.add(mesh);
+
+    if (isAxe) console.log("Axe Added to Scene. Scene Children count:", this.scene.children.length);
+
+    this.projectiles.push({
+      mesh,
+      velocity: dir.multiplyScalar(speed),
+      ownerId: options.ownerId,
+      damage: weaponDef.damage,
+      radius: isAxe ? 0.5 : (weaponDef.id === 'gift_launcher' ? 1.5 : 0.2), // Gift: BIG radius (1.5) for "Surface Hit"
+      life: 3.0,
+      isAxe,
+      weaponId: options.weapon // SAVE WEAPON ID
+    });
+
+    // CRASH FIX: Hard cap projectiles to prevent memory explosion/spam crash
+    if (this.projectiles.length > 50) {
+      const old = this.projectiles.shift(); // Remove oldest
+      if (old) {
+        this.disposeObject(old.mesh);
       }
     }
   }
@@ -932,10 +1402,22 @@ export class GameClient {
   private tryFire(shooter: Entity, targets: Entity[], dt: number) {
     const weapon = WEAPONS[shooter.weapon];
     if (shooter.nextFire > 0) return;
-    if (shooter.magAmmo <= 0) return;
 
-    shooter.magAmmo -= 1;
-    shooter.nextFire = 1 / weapon.fireRate; // Reset Timer
+    // Powerup: Infinite Ammo Check
+    if (shooter.id === 'local' && this.powerupState.active) {
+      // Infinite ammo, bypass check
+    } else {
+      if (shooter.magAmmo <= 0) return;
+      shooter.magAmmo -= 1;
+    }
+
+    let fireRate = weapon.fireRate;
+    // Powerup: 2x Speed
+    if (shooter.id === 'local' && this.powerupState.active) {
+      fireRate *= 2;
+    }
+
+    shooter.nextFire = 1 / fireRate;
 
     // Play Sound
     if (shooter.id === "local") {
@@ -956,7 +1438,7 @@ export class GameClient {
       mesh.userData.muzzle.getWorldPosition(muzzlePos);
       origin = muzzlePos;
     } else {
-      const right = new THREE.Vector3(Math.cos(shooter.yaw), 0, -Math.sin(shooter.yaw));
+      const right = new THREE.Vector3(Math.sin(shooter.yaw), 0, -Math.sin(shooter.yaw));
       origin.addScaledVector(right, 0.4);
     }
 
@@ -1003,29 +1485,14 @@ export class GameClient {
       ).normalize();
     }
 
-    // Special: Gift Launcher Projectile
-    if (weapon.type === "projectile" && weapon.id === "gift_launcher") {
-      const direction = baseDirection.clone();
-      // Create Projectile Mesh (Gift Box)
-      const boxGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-      const boxMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-      const pMesh = new THREE.Group();
-      const box = new THREE.Mesh(boxGeo, boxMat);
-      pMesh.add(box);
-
-      // Add particles or ribbon?
-
-      pMesh.position.copy(origin);
-      this.scene.add(pMesh);
-
-      const speed = weapon.projectileSpeed || 30;
-      this.projectiles.push({
-        mesh: pMesh,
-        velocity: direction.multiplyScalar(speed),
-        ownerId: shooter.id,
-        damage: weapon.damage,
-        radius: 2.4, // Decreased by 70% (was 8)
-        life: 5.0
+    // Projectile weapons
+    if (weapon.type === "projectile") {
+      this.shootProjectile({
+        weapon: weapon.id,
+        position: origin,
+        yaw: shooter.yaw,
+        pitch: shooter.pitch,
+        ownerId: shooter.id
       });
       return; // Done
     }
@@ -1095,11 +1562,20 @@ export class GameClient {
         const dist = origin.distanceTo(hitPoint);
         if (dist <= 300) {
           let damage = weapon.damage;
-          if (isHeadshot) {
-            damage *= 10; // Mega Critical (Guaranteed Kill)
-            console.log("BOOM HEADSHOT!");
+          let finalDmg = damage; // Renamed to avoid conflict with outer scope 'damage'
+
+          // If headshot: 2x
+          if (isHeadshot) finalDmg *= 2;
+
+          // Powerup: 2x Damage for local player
+          // Oh wait, applyDamage is generic. 
+          // Let's modify call site or check global if it's single player.
+          // In SP 'player' is unique.
+          if (this.mode !== 'multiplayer' && shooter === this.player && this.powerupState.active) {
+            finalDmg *= 2;
           }
-          applyDamage(hitEntity, damage);
+
+          applyDamage(hitEntity, finalDmg);
 
           // Audio Throttle (Max 1 hit sound per frame/fire call)
           if (!hitSoundPlayed) {
@@ -1120,10 +1596,11 @@ export class GameClient {
         }
       }
     }
+
   }
 
   // --- Map Collision ---
-  // Checks for solid objects below feet. 
+  // Checks for solid objects below feet.
   // If object is "step-able" (low enough), snap Y up.
   // If object is "wall" (too high), block X/Z movement.
   private checkMapCollision(pos: THREE.Vector3, vel: THREE.Vector3, dt: number) {
@@ -1131,23 +1608,22 @@ export class GameClient {
     const rayStart = pos.clone().add(new THREE.Vector3(0, 1.0, 0));
     this.raycaster.set(rayStart, down);
 
-    const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+    // OPTIMIZATION: Only raycast against map group!
+    const intersects = this.raycaster.intersectObjects([this.mapGroup], true);
     let groundY = 0;
     let hitSolid = false;
 
     for (const hit of intersects) {
-      let obj: THREE.Object3D | null = hit.object;
+      // With mapGroup optimization, anything hit is part of the map.
+      // We can trust userData.solid if set, or treat as ground.
       let isSolid = false;
-      let isPlayer = false;
+      let obj: THREE.Object3D | null = hit.object;
 
       while (obj) {
-        if (obj.userData?.solid) isSolid = true;
-        if (obj.userData?.entityId) isPlayer = true;
-        if (obj.parent === null) break;
+        if (obj.userData?.solid) { isSolid = true; break; }
+        if (obj.parent === this.mapGroup || obj.parent === null) break;
         obj = obj.parent;
       }
-
-      if (isPlayer) continue;
 
       if (isSolid || hit.object.name !== "sky") {
         groundY = hit.point.y;
@@ -1173,7 +1649,7 @@ export class GameClient {
       if (hitSolid) {
         pos.x -= vel.x * dt;
         pos.z -= vel.z * dt;
-        // Don't stop velocity, just position, to allow 'sliding' feel if we had better physics, 
+        // Don't stop velocity, just position, to allow 'sliding' feel if we had better physics,
         // but here just stop is fine.
       }
 
@@ -1188,18 +1664,25 @@ export class GameClient {
     }
   }
 
+  // Shared geometries to reduce GC
+  // Mark as shared to prevent disposal
+  private static trailGeo = (() => {
+    const g = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true).translate(0, 0.5, 0).rotateX(Math.PI / 2);
+    g.userData = { shared: true };
+    return g;
+  })();
+  private static sphereGeo = (() => { const g = new THREE.SphereGeometry(0.15, 8, 8); g.userData = { shared: true }; return g; })();
+  private static boxGeo = (() => { const g = new THREE.BoxGeometry(0.4, 0.4, 0.4); g.userData = { shared: true }; return g; })();
+
   private createBulletTrail(start: THREE.Vector3, end: THREE.Vector3, type: "hitscan" | "projectile") {
-    const isShotgun = type === "hitscan" && this.player.weapon.includes("shotgun"); // rough check
+    const isShotgun = type === "hitscan" && this.player.weapon.includes("shotgun");
     const color = isShotgun ? 0xffaa00 : 0xffff00;
-    const thickness = isShotgun ? 0.05 : 0.15; // Shotgun thinner trails
+    const thickness = isShotgun ? 0.05 : 0.15;
 
     const direction = new THREE.Vector3().subVectors(end, start);
     const length = direction.length();
 
-    const geo = new THREE.CylinderGeometry(thickness, thickness, length, 8, 1, true);
-    geo.rotateX(Math.PI / 2);
-    geo.translate(0, 0, length / 2);
-
+    // Resize shared geometry via scaling
     const mat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -1208,18 +1691,46 @@ export class GameClient {
       depthWrite: false
     });
 
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(GameClient.trailGeo, mat);
     mesh.position.copy(start);
     mesh.lookAt(end);
+    mesh.scale.set(thickness, thickness, length);
 
     this.scene.add(mesh);
-    this.trails.push({ mesh, life: 0.2, maxLife: 0.2, startScale: 1.0 });
+    this.trails.push({ mesh, life: 0.2, maxLife: 0.2, startScale: thickness });
   }
+
+
 
   private clampToBounds(pos: THREE.Vector3) {
     pos.x = THREE.MathUtils.clamp(pos.x, this.map.bounds.min[0], this.map.bounds.max[0]);
     pos.y = THREE.MathUtils.clamp(pos.y, this.map.bounds.min[1], this.map.bounds.max[1] + 5);
     pos.z = THREE.MathUtils.clamp(pos.z, this.map.bounds.min[2], this.map.bounds.max[2]);
+  }
+
+  // Simple particle system
+  private spawnParticles(pos: THREE.Vector3, color: number, count: number = 5) {
+    const geo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+
+    for (let i = 0; i < count; i++) {
+      const mesh = new THREE.Mesh(geo, mat);
+      // Random offset
+      const offset = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 0.5,
+        (Math.random() - 0.5) * 0.5
+      );
+      mesh.position.copy(pos).add(offset);
+      this.scene.add(mesh);
+
+      this.trails.push({
+        mesh,
+        life: 1.0, // Fade over 1s
+        maxLife: 1.0,
+        startScale: 1.0
+      });
+    }
   }
 
   private sendInput() {
@@ -1257,7 +1768,8 @@ export class GameClient {
         mode: this.mode,
         map: this.map.id,
         stageInfo,
-        bannerText: this.bannerText
+        bannerText: this.bannerText,
+        powerupTimer: this.powerupState.active ? this.powerupState.timer : 0 // ADDED
       });
     }
   }
@@ -1422,6 +1934,15 @@ function makePlayerMesh(weaponId: WeaponId, isBot: boolean, avatarId: string = "
     browR.position.set(0.1, 0.18, -0.22);
     browR.rotation.z = 0.3; // Angry slant
     head.add(browR);
+
+    // CUSTOM FACE (Snowman)
+    // In front of face
+    const faceGeo = new THREE.PlaneGeometry(0.5, 0.5);
+    const faceMat = new THREE.MeshBasicMaterial({ map: botFaceTexSnowman, transparent: true });
+    const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+    faceMesh.position.set(0, 0, -0.32);
+    faceMesh.rotation.y = Math.PI;
+    head.add(faceMesh);
   }
 
   // Arms
@@ -1514,7 +2035,7 @@ function makePlayerMesh(weaponId: WeaponId, isBot: boolean, avatarId: string = "
 
       // Muzzle Endpoint
       const muzzle = new THREE.Object3D();
-      muzzle.position.set(0, 0, -0.2); // Tip 
+      muzzle.position.set(0, 0, -0.2); // Tip
       barrel.add(muzzle);
       wGroup.userData.muzzle = muzzle;
     }
@@ -1527,21 +2048,216 @@ function makePlayerMesh(weaponId: WeaponId, isBot: boolean, avatarId: string = "
   return group;
 }
 
+
+
+// Cache for Axe assets
+let axeHandleGeo: THREE.CylinderGeometry;
+let axeHeadGeo: THREE.BoxGeometry;
+let axeHandleMat: THREE.Material;
+let axeHeadMat: THREE.Material;
+
+function makeProjectileMesh(def: any, isAxe: boolean = false): THREE.Group {
+  const g = new THREE.Group();
+
+  if (isAxe) {
+    // PHYSICS DEBUG: HUGE BLUE BOX
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(2.0, 2.0, 2.0), // HUGE
+      new THREE.MeshBasicMaterial({ color: 0x0000ff }) // BLUE
+    );
+    g.add(box);
+    return g;
+  }
+
+  // Standard Projectile (Snowball / Gift / Laser)
+  const isGift = def.id === "gift_launcher";
+  const geo = isGift
+    ? new THREE.BoxGeometry(0.4, 0.4, 0.4)
+    : new THREE.SphereGeometry(0.15, 8, 8);
+
+  const color = isGift ? 0xff0000 : 0xffffff;
+  const mat = new THREE.MeshBasicMaterial({ color });
+  const m = new THREE.Mesh(geo, mat);
+  g.add(m);
+  return g;
+}
+
+// Cache for Gingerbread assets
+// Cache for Gingerbread assets
+let gbBodyGeo: THREE.BoxGeometry;
+let gbButtonGeo: THREE.SphereGeometry;
+let gbHeadGeo: THREE.CylinderGeometry;
+let gbEyeGeo: THREE.SphereGeometry;
+let gbMouthGeo: THREE.TorusGeometry;
+let gbArmGeo: THREE.BoxGeometry;
+let gbLegGeo: THREE.BoxGeometry;
+
+let gbCookieMat: THREE.Material;
+let gbIcingMat: THREE.Material;
+let gbButtonMatRed: THREE.Material;
+let gbButtonMatGreen: THREE.Material;
+let gbEyeMat: THREE.Material;
+
+function makeGingerbreadMesh(): THREE.Group {
+  const group = new THREE.Group();
+
+  // Init Cache if missing
+  if (!gbBodyGeo) {
+    // Flat Cookie Body
+    gbBodyGeo = new THREE.BoxGeometry(0.6, 0.9, 0.15); // Flat box
+    gbBodyGeo.userData = { shared: true };
+
+    // Flat Head
+    gbHeadGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 16);
+    gbHeadGeo.rotateX(Math.PI / 2); // Rotate to face forward flat
+    gbHeadGeo.userData = { shared: true };
+
+    gbButtonGeo = new THREE.SphereGeometry(0.06);
+    gbButtonGeo.userData = { shared: true };
+
+    gbEyeGeo = new THREE.SphereGeometry(0.04);
+    gbEyeGeo.userData = { shared: true };
+
+    // Icing Mouth (Half Torus)
+    gbMouthGeo = new THREE.TorusGeometry(0.1, 0.02, 4, 8, Math.PI);
+    gbMouthGeo.userData = { shared: true };
+
+    // Limbs (Flat Boxes or Cylinders)
+    gbArmGeo = new THREE.BoxGeometry(0.2, 0.7, 0.15);
+    gbArmGeo.userData = { shared: true };
+    gbLegGeo = new THREE.BoxGeometry(0.25, 0.7, 0.15);
+    gbLegGeo.userData = { shared: true };
+
+    gbCookieMat = new THREE.MeshStandardMaterial({ color: 0xb5651d, roughness: 0.9 });
+    gbCookieMat.userData = { shared: true };
+    gbIcingMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    gbIcingMat.userData = { shared: true };
+    gbButtonMatRed = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    gbButtonMatRed.userData = { shared: true };
+    gbButtonMatGreen = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+    gbButtonMatGreen.userData = { shared: true };
+    gbEyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    gbEyeMat.userData = { shared: true };
+  }
+
+  // Restore Model
+  // Clone materials so we can flash emissive independently
+  const mat = gbCookieMat.clone();
+
+  // Body
+  const body = new THREE.Mesh(gbBodyGeo, mat);
+  body.position.y = 0.75;
+  group.add(body);
+
+  // Head
+  const head = new THREE.Mesh(gbHeadGeo, mat);
+  head.position.y = 1.35;
+  group.add(head);
+
+  // Buttons
+  const b1 = new THREE.Mesh(gbButtonGeo, gbButtonMatRed); b1.position.set(0, 0.85, -0.08); group.add(b1);
+  const b2 = new THREE.Mesh(gbButtonGeo, gbButtonMatGreen); b2.position.set(0, 0.65, -0.08); group.add(b2);
+
+  // Eyes (Flipped to -Z)
+  const le = new THREE.Mesh(gbEyeGeo, gbEyeMat); le.position.set(-0.12, 1.45, -0.08); group.add(le);
+  const re = new THREE.Mesh(gbEyeGeo, gbEyeMat); re.position.set(0.12, 1.45, -0.08); group.add(re);
+
+  // Mouth (Flipped to -Z)
+  const mouth = new THREE.Mesh(gbMouthGeo, gbIcingMat);
+  mouth.position.set(0, 1.35, -0.08);
+  mouth.rotation.x = Math.PI;
+  group.add(mouth);
+
+  // CUSTOM FACE (Gingerbread)
+  const faceGeo = new THREE.PlaneGeometry(0.6, 0.6); // Bigger face for flat head
+  const faceMat = new THREE.MeshBasicMaterial({ map: botFaceTexGinger, transparent: true });
+  const faceMesh = new THREE.Mesh(faceGeo, faceMat);
+  faceMesh.position.set(0, 1.35, -0.09); // Slightly in front of head/body Z
+  faceMesh.rotation.y = Math.PI;
+  group.add(faceMesh);
+
+  // Arms
+  const la = new THREE.Mesh(gbArmGeo, mat);
+  la.position.set(-0.45, 1.0, 0);
+  la.rotation.z = Math.PI / 8;
+  group.add(la);
+
+  const ra = new THREE.Mesh(gbArmGeo, mat);
+  ra.position.set(0.45, 1.0, 0);
+  ra.rotation.z = -Math.PI / 8;
+  group.add(ra);
+
+  // Legs
+  const ll = new THREE.Mesh(gbLegGeo, mat);
+  ll.position.set(-0.2, 0.35, 0);
+  group.add(ll);
+
+  const rl = new THREE.Mesh(gbLegGeo, mat);
+  rl.position.set(0.2, 0.35, 0);
+  group.add(rl);
+
+  group.userData.isHead = true;
+  return group;
+}
+
 function makeHealthBar() {
   const group = new THREE.Group();
 
-  // Background (Red)
-  const bgGeo = new THREE.PlaneGeometry(1, 0.15);
-  const bgMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+  // Background
+  const bgGeo = new THREE.PlaneGeometry(1, 0.1);
+  const bgMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
   const bg = new THREE.Mesh(bgGeo, bgMat);
   group.add(bg);
 
-  // Foreground (Green)
-  const fgGeo = new THREE.PlaneGeometry(1, 0.15);
+  // Foreground (HP)
+  const fgGeo = new THREE.PlaneGeometry(1, 0.1);
   const fgMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
   const fg = new THREE.Mesh(fgGeo, fgMat);
   fg.position.z = 0.01; // Front
   group.add(fg);
-
   return group;
 }
+
+function makeItemMesh(type: 'health_potion' | 'powerup'): THREE.Group {
+  const g = new THREE.Group();
+
+  if (type === 'health_potion') {
+    // Red Cross or Heart in a sphere
+    const sphereGeo = new THREE.SphereGeometry(0.3, 16, 16);
+    const sphereMat = new THREE.MeshStandardMaterial({
+      color: 0xff0000,
+      emissive: 0x550000,
+      transparent: true,
+      opacity: 0.8
+    });
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    g.add(sphere);
+
+    // White Cross
+    const crossMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const v = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.1), crossMat);
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), crossMat);
+    g.add(v); g.add(h);
+
+    // Glow?
+    const glow = new THREE.PointLight(0xff0000, 1, 3);
+    g.add(glow);
+
+  } else {
+    // Powerup: Lightning Bolt / Star? Or just Blue/Gold Sphere
+    const sphereGeo = new THREE.OctahedronGeometry(0.35, 0); // Diamond shape
+    const sphereMat = new THREE.MeshStandardMaterial({
+      color: 0xffff00,
+      emissive: 0xaa8800,
+      metalness: 1.0,
+      roughness: 0.2
+    });
+    const mesh = new THREE.Mesh(sphereGeo, sphereMat);
+    g.add(mesh);
+
+    const glow = new THREE.PointLight(0xffff00, 1, 4);
+    g.add(glow);
+  }
+  return g;
+}
+

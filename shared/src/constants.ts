@@ -1,4 +1,4 @@
-export type WeaponId = "snow_smg" | "candy_shotgun" | "gift_launcher" | "icicle_rifle";
+export type WeaponId = "snow_smg" | "candy_shotgun" | "gift_launcher" | "icicle_rifle" | "gingerbread_axe";
 export type MapId = "heaven" | "earth" | "hell";
 
 export interface WeaponDefinition {
@@ -56,6 +56,17 @@ export const WEAPONS: Record<WeaponId, WeaponDefinition> = {
     spread: 0.001,
     magSize: 15,
     reloadTime: 0.1
+  },
+  gingerbread_axe: {
+    id: "gingerbread_axe",
+    name: "Gingerbread Missile", // Renamed
+    type: "projectile",
+    damage: 10,
+    fireRate: 0.25, // 1 shot every 4s (1/4 = 0.25). Wait, fireRate is Hz. 1/4s = 0.25.
+    spread: 0.05,
+    magSize: 999,
+    reloadTime: 0,
+    projectileSpeed: 5 // Slow and visible (was 10)
   }
 };
 

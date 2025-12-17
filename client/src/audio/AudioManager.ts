@@ -229,6 +229,76 @@ export class AudioManager {
         }
     }
 
+    public playAxeThrow() {
+        // Low Whoosh
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        const now = this.ctx.currentTime;
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.3);
+
+        osc.start(now);
+        osc.stop(now + 0.3);
+    }
+
+    public playHeal() {
+        // Magical Chime
+        const now = this.ctx.currentTime;
+        const notes = [523.25, 659.25, 783.99]; // C Major Arp
+        notes.forEach((freq, i) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            osc.connect(gain);
+            gain.connect(this.sfxGain);
+
+            const start = now + i * 0.1;
+            gain.gain.setValueAtTime(0, start);
+            gain.gain.linearRampToValueAtTime(0.3, start + 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.01, start + 0.4);
+
+            osc.start(start);
+            osc.stop(start + 0.4);
+        });
+    }
+
+    public playPowerup() {
+        // Ascending Power Sound
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        const now = this.ctx.currentTime;
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, now);
+        osc.frequency.exponentialRampToValueAtTime(800, now + 0.5); // Slide Up
+
+        // Vibrato
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.value = 20;
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 50;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfo.start(now);
+        lfo.stop(now + 0.5);
+
+        gain.gain.setValueAtTime(0.5, now);
+        gain.gain.linearRampToValueAtTime(0, now + 0.5);
+
+        osc.start(now);
+        osc.stop(now + 0.5);
+    }
+
     public playExplosion() {
         // Low rumble
         const osc = this.ctx.createOscillator();
@@ -248,13 +318,47 @@ export class AudioManager {
         osc.stop(now + 0.8);
     }
 
+    private lastKillLineTime = 0;
+
+    public playKillLine() {
+        if (!window.speechSynthesis) return;
+        const now = Date.now();
+        if (now - this.lastKillLineTime < 3000) return; // Max once per 3s
+        this.lastKillLineTime = now;
+
+        // Cancel previous to avoid queue buildup?
+        window.speechSynthesis.cancel();
+
+        const lines = [
+            "Jingle bells!",
+            "Ho ho ho!",
+            "Merry Christmas!",
+            "Slay bells ring!",
+            "Naughty list for you!",
+            "Put that cookie down!"
+        ];
+        const text = lines[Math.floor(Math.random() * lines.length)];
+        const utter = new SpeechSynthesisUtterance(text);
+
+        // Funny/Sarcastic voice params
+        utter.pitch = 1.5 + (Math.random() * 0.5); // High pitch like an elf
+        utter.rate = 1.2; // Fast
+        utter.volume = 0.8;
+
+        window.speechSynthesis.speak(utter);
+    }
+
+    private lastHitTime = 0;
     public playHit() {
+        const now = this.ctx.currentTime;
+        if (now - this.lastHitTime < 0.05) return; // Limit to 20 per sec
+        this.lastHitTime = now;
+
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.connect(gain);
         gain.connect(this.sfxGain);
 
-        const now = this.ctx.currentTime;
         osc.type = 'sine';
         osc.frequency.setValueAtTime(800, now);
         gain.gain.setValueAtTime(0.5, now);
@@ -296,27 +400,6 @@ export class AudioManager {
 
         osc.start(now);
         osc.stop(now + 0.4);
-    }
-    public playKillLine() {
-        if (!window.speechSynthesis) return;
-
-        const lines = [
-            "Jingle bells!",
-            "Ho ho ho!",
-            "Merry Christmas!",
-            "Slay bells ring!",
-            "Naughty list for you!",
-            "Put that cookie down!"
-        ];
-        const text = lines[Math.floor(Math.random() * lines.length)];
-        const utter = new SpeechSynthesisUtterance(text);
-
-        // Funny/Sarcastic voice params
-        utter.pitch = 1.5 + (Math.random() * 0.5); // High pitch like an elf
-        utter.rate = 1.2; // Fast
-        utter.volume = 0.8;
-
-        window.speechSynthesis.speak(utter);
     }
 }
 

@@ -84,15 +84,13 @@ export default function App() {
                   <button className="ss_button btn_blue" style={{ flex: 1 }} onClick={() => startMode("multiplayer")}>
                     Servers
                   </button>
-                  <button className="ss_button btn_red" style={{ flex: 1 }}>
-                    Login
-                  </button>
+                  {/* Login button removed */}
                 </div>
               </div>
             </div>
 
             <div className="column">
-              <div className="ss_bigtab" style={{ cursor: "default" }}>
+              <div className="ss_bigtab" style={{ cursor: "default", height: '100%' }}>
                 <div className="hud-label" style={{ marginBottom: 10 }}>Map Selection</div>
                 <div style={{ display: "grid", gap: 8, width: "100%" }}>
                   {Object.values(MAPS).map((m) => (
@@ -108,26 +106,7 @@ export default function App() {
                   ))}
                 </div>
               </div>
-
-              <div className="ss_bigtab" style={{ cursor: "default", marginTop: "auto" }}>
-                <div className="hud-label">Skins</div>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "center" }}>
-                  {AVATARS.map(avatar => (
-                    <div
-                      key={avatar.id}
-                      onClick={() => setAvatarId(avatar.id)}
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: "50%",
-                        background: avatar.primaryColor,
-                        border: avatarId === avatar.id ? "2px solid white" : "none",
-                        cursor: "pointer"
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
+              {/* Skins section removed */}
             </div>
           </div>
         </div>

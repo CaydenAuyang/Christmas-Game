@@ -111,6 +111,44 @@ export default function GameScreen({ mode, map, playerName, loadout, onExit }: P
       {mode === "multiplayer" && (
         <OverlayMessage text="Multiplayer Beta: Connecting..." />
       )}
+      {/* Powerup Timer */}
+      {mode !== "menu" && hud && (hud.powerupTimer || 0) > 0 && (
+        <div style={{
+          position: "absolute",
+          top: 100,
+          left: "50%",
+          transform: "translateX(-50%)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center"
+        }}>
+          <div style={{ position: "relative", width: 60, height: 60 }}>
+            <svg width="60" height="60" viewBox="0 0 60 60">
+              <circle cx="30" cy="30" r="25" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="5" />
+              <circle
+                cx="30" cy="30" r="25"
+                fill="none"
+                stroke="gold"
+                strokeWidth="5"
+                strokeDasharray="157"
+                strokeDashoffset={157 * (1 - (hud.powerupTimer! / 10))} // 10s max
+                transform="rotate(-90 30 30)"
+                style={{ transition: "stroke-dashoffset 0.1s linear" }}
+              />
+            </svg>
+            <div style={{
+              position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "gold", fontWeight: "bold", fontSize: 20
+            }}>
+              {Math.ceil(hud.powerupTimer!)}
+            </div>
+          </div>
+          <div style={{ color: "gold", fontWeight: "bold", marginTop: 5, textShadow: "0 1px 2px black" }}>POWER SURGE</div>
+        </div>
+      )}
+
+      {/* Banner */}
       {mode !== "menu" && hud && hud.bannerText && (
         <div style={{
           position: "absolute",
